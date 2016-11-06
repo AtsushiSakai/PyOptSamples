@@ -12,20 +12,20 @@ A = numpy.random.randn(m, n)
 b = numpy.random.randn(m)
 
 x = Variable(n)
-# $B%3%9%H:GE,2=(B
+# コスト最適化
 objective = Minimize(sum_squares(A*x - b))
-# $B@)Ls(B
+# 制約
 constraints = [0 <= x, x <= 1]
 prob = Problem(objective, constraints)
 
 result = prob.solve()
-# $B:GE,CM(B
+# 最適値
 print "optimal parameter:\n",x.value
 
-# $B%i%0%i%s%8%e%Q%i%a!<%?(B
+# ラグランジュパラメータ
 print "Lagrange parameter\n",constraints[0].dual_value
 
-#$B:GE,2=$N7k2L(B
+#最適化の結果
 print ("status:"+prob.status)
 
 
