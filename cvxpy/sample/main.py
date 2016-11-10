@@ -5,27 +5,20 @@ from cvxpy import *
 import numpy
 import matplotlib.pyplot as plt
 
-m = 30
-n = 20
-numpy.random.seed(1)
-A = numpy.random.randn(m, n)
-b = numpy.random.randn(m)
 
-x = Variable(n)
-# コスト最適化
-objective = Minimize(sum_squares(A*x - b))
-# 制約
-constraints = [0 <= x, x <= 1]
+z1 = Variable()
+z2 = Variable()
+
+objective = Minimize(abs(z1+5)+abs(z2-3))
+
+constraints = [2.5 <= z1, z1 <= 5]
+constraints += [-1.0 <= z2, z2 <= 1]
 prob = Problem(objective, constraints)
 
 result = prob.solve()
+
 # 最適値
-print "optimal parameter:\n",x.value
-
-# ラグランジュパラメータ
-print "Lagrange parameter\n",constraints[0].dual_value
-
-#最適化の結果
-print ("status:"+prob.status)
-
+print "z1",z1.value
+print "z2",z2.value
+print "cost:",prob.value
 
