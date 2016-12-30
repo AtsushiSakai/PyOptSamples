@@ -10,9 +10,7 @@ import numpy as np
 options = {}
 
 
-def qp(P, q, G=None, h=None, A=None, b=None,
-       ynewcopy=None, ydot=None, yaxpy=None,
-       yscal=None, **kwargs):
+def qp(P, q, G=None, h=None, A=None, b=None, **kwargs):
     """
     Solves a pair of primal and dual convex quadratic cone programs
         minimize    (1/2)*x'*P*x + q'*x
@@ -232,30 +230,14 @@ def qp(P, q, G=None, h=None, A=None, b=None,
     import math
     from cvxopt import base, blas, misc
     from cvxopt.base import matrix, spmatrix
-    dims = None
     STEP = 0.99
     EXPON = 3
+    MAXITERS = 100
+    ABSTOL = 1e-7
+
+    dims = None
 
     options = kwargs.get('options', globals()['options'])
-
-    DEBUG = options.get('debug', False)
-
-    KKTREG = options.get('kktreg', None)
-    if KKTREG is None:
-        pass
-    elif not isinstance(KKTREG, (float, int, long)) or KKTREG < 0.0:
-        raise ValueError("options['kktreg'] must be a nonnegative scalar")
-
-    # Use Mehrotra correction or not.
-    correction = options.get('use_correction', True)
-
-    MAXITERS = options.get('maxiters', 100)
-    if not isinstance(MAXITERS, (int, long)) or MAXITERS < 1:
-        raise ValueError("options['maxiters'] must be a positive integer")
-
-    ABSTOL = options.get('abstol', 1e-7)
-    if not isinstance(ABSTOL, (float, int, long)):
-        raise ValueError("options['abstol'] must be a scalar")
 
     RELTOL = options.get('reltol', 1e-6)
     if not isinstance(RELTOL, (float, int, long)):
@@ -283,9 +265,7 @@ def qp(P, q, G=None, h=None, A=None, b=None,
             (not matrixA and A is not None)) and not customkkt:
         raise ValueError("use of function valued P, G, A requires a "
                          "user-provided kktsolver")
-    customy = (ynewcopy is not None or ydot is not None or yaxpy is not None or
-               yscal is not None)
-    if customy and (matrixA or not customkkt):
+    if False and (matrixA or not customkkt):
         raise ValueError("use of non vector type for y requires "
                          "function valued A and user-provided kktsolver")
 
@@ -358,15 +338,8 @@ def qp(P, q, G=None, h=None, A=None, b=None,
         fG = G
 
     if A is None:
-        if customy:
-            def A(x, y, trans='N', alpha=1.0, beta=0.0):
-                if trans == 'N':
-                    pass
-                else:
-                    xscal(beta, y)
-        else:
-            A = spmatrix([], [], [], (0, q.size[0]))
-            matrixA = True
+        A = spmatrix([], [], [], (0, q.size[0]))
+        matrixA = True
     if matrixA:
         if A.typecode != 'd' or A.size[1] != q.size[0]:
             raise TypeError("'A' must be a 'd' matrix with %d columns"
@@ -376,15 +349,12 @@ def qp(P, q, G=None, h=None, A=None, b=None,
             base.gemv(A, x, y, trans=trans, alpha=alpha, beta=beta)
     else:
         fA = A
-    if not customy:
-        if b is None:
-            b = matrix(0.0, (0, 1))
-        if not isinstance(b, matrix) or b.typecode != 'd' or b.size[1] != 1:
-            raise TypeError("'b' must be a 'd' matrix with one column")
-        if matrixA and b.size[0] != A.size[0]:
-            raise TypeError("'b' must have length %d" % A.size[0])
-    if b is None and customy:
-        raise ValueError("use of non-vector type for y requires b")
+    if b is None:
+        b = matrix(0.0, (0, 1))
+    if not isinstance(b, matrix) or b.typecode != 'd' or b.size[1] != 1:
+        raise TypeError("'b' must be a 'd' matrix with one column")
+    if matrixA and b.size[0] != A.size[0]:
+        raise TypeError("'b' must have length %d" % A.size[0])
 
     ws3, wz3 = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
 
@@ -439,14 +409,11 @@ def qp(P, q, G=None, h=None, A=None, b=None,
     def xcopy(x, y):
         xscal(0.0, y)
         xaxpy(x, y)
-    if ynewcopy is None:
-        ynewcopy = matrix
-    if ydot is None:
-        ydot = blas.dot
-    if yaxpy is None:
-        yaxpy = blas.axpy
-    if yscal is None:
-        yscal = blas.scal
+
+    ynewcopy = matrix
+    ydot = blas.dot
+    yaxpy = blas.axpy
+    yscal = blas.scal
 
     def ycopy(x, y):
         yscal(0.0, y)
@@ -734,7 +701,7 @@ def qp(P, q, G=None, h=None, A=None, b=None,
         # iterative refinement.
 
         if iters == 0:
-            if refinement or DEBUG:
+            if refinement:
                 wx, wy = matrix(q), ynewcopy(b)
                 wz, ws = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
             if refinement:
@@ -742,7 +709,7 @@ def qp(P, q, G=None, h=None, A=None, b=None,
                 wz2, ws2 = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
 
         def f4(x, y, z, s):
-            if refinement or DEBUG:
+            if refinement:
                 xcopy(x, wx)
                 ycopy(y, wy)
                 blas.copy(z, wz)
@@ -759,13 +726,6 @@ def qp(P, q, G=None, h=None, A=None, b=None,
                 yaxpy(wy2, y)
                 blas.axpy(wz2, z)
                 blas.axpy(ws2, s)
-            if DEBUG:
-                res(x, y, z, s, wx, wy, wz, ws, W, lmbda)
-                print("KKT residuals:")
-                print("    'x': %e" % math.sqrt(xdot(wx, wx)))
-                print("    'y': %e" % math.sqrt(ydot(wy, wy)))
-                print("    'z': %e" % misc.snrm2(wz, dims))
-                print("    's': %e" % misc.snrm2(ws, dims))
 
         mu = gap / (dims['l'] + len(dims['q']) + sum(dims['s']))
         sigma, eta = 0.0, 0.0
@@ -787,7 +747,7 @@ def qp(P, q, G=None, h=None, A=None, b=None,
             #    = -lmbdasq - dsa o dza + sigma * mu * e  (if i is 1),
             #     where ds, dz are solution for i is 0.
             blas.scal(0.0, ds)
-            if correction and i == 1:
+            if i == 1:
                 blas.axpy(ws3, ds, alpha=-1.0)
             blas.axpy(lmbdasq, ds, n=dims['l'] + sum(dims['q']),
                       alpha=-1.0)
@@ -837,7 +797,7 @@ def qp(P, q, G=None, h=None, A=None, b=None,
             dsdz = misc.sdot(ds, dz, dims)
 
             # Save ds o dz for Mehrotra correction
-            if correction and i == 0:
+            if i == 0:
                 blas.copy(ds, ws3)
                 misc.sprod(ws3, dz, dims)
 
