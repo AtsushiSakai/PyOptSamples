@@ -6,12 +6,11 @@ Simple sample code to solve quadratic programming with cvxopt
 author Atsushi Sakai
 """
 
-__all__ = []
 options = {}
 
 
 def qp(P, q, G=None, h=None, A=None, b=None,
-       xscal=None, ynewcopy=None, ydot=None, yaxpy=None,
+       ynewcopy=None, ydot=None, yaxpy=None,
        yscal=None, **kwargs):
     """
     Solves a pair of primal and dual convex quadratic cone programs
@@ -283,17 +282,13 @@ def qp(P, q, G=None, h=None, A=None, b=None,
             (not matrixA and A is not None)) and not customkkt:
         raise ValueError("use of function valued P, G, A requires a "
                          "user-provided kktsolver")
-    customx = xscal is not None
-    if customx and (matrixP or matrixG or matrixA or not customkkt):
-        raise ValueError("use of non-vector type for x requires "
-                         "function valued P, G, A and user-provided kktsolver")
     customy = (ynewcopy is not None or ydot is not None or yaxpy is not None or
                yscal is not None)
     if customy and (matrixA or not customkkt):
         raise ValueError("use of non vector type for y requires "
                          "function valued A and user-provided kktsolver")
 
-    if not customx and (not isinstance(q, matrix) or q.typecode != 'd' or q.size[1] != 1):
+    if (not isinstance(q, matrix) or q.typecode != 'd' or q.size[1] != 1):
         raise TypeError("'q' must be a 'd' matrix with one column")
 
     if matrixP:
@@ -348,15 +343,8 @@ def qp(P, q, G=None, h=None, A=None, b=None,
         inds = inds + [inds[-1] + k ** 2]
 
     if G is None:
-        if customx:
-            def G(x, y, trans='N', alpha=1.0, beta=0.0):
-                if trans == 'N':
-                    pass
-                else:
-                    xscal(beta, y)
-        else:
-            G = spmatrix([], [], [], (0, q.size[0]))
-            matrixG = True
+        G = spmatrix([], [], [], (0, q.size[0]))
+        matrixG = True
     if matrixG:
         if G.typecode != 'd' or G.size != (cdim, q.size[0]):
             raise TypeError("'G' must be a 'd' matrix of size (%d, %d)"
@@ -369,15 +357,12 @@ def qp(P, q, G=None, h=None, A=None, b=None,
         fG = G
 
     if A is None:
-        if customx or customy:
+        if customy:
             def A(x, y, trans='N', alpha=1.0, beta=0.0):
                 if trans == 'N':
                     pass
                 else:
                     xscal(beta, y)
-        else:
-            A = spmatrix([], [], [], (0, q.size[0]))
-            matrixA = True
     if matrixA:
         if A.typecode != 'd' or A.size[1] != q.size[0]:
             raise TypeError("'A' must be a 'd' matrix with %d columns"
