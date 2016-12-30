@@ -7,7 +7,13 @@ author Atsushi Sakai
 """
 import numpy as np
 
-options = {}
+STEP = 0.99
+EXPON = 3
+MAXITERS = 100
+ABSTOL = 1e-7
+RELTOL = 1e-6
+FEASTOL = 1e-7
+show_progress = True
 
 
 def qp(P, q, G=None, h=None, A=None, b=None, **kwargs):
@@ -114,9 +120,6 @@ def qp(P, q, G=None, h=None, A=None, b=None, **kwargs):
         - 'dual slack': the smallest dual slack, sup {t | z >= t*e }.
         If the exit status is 'optimal', then the primal and dual
         infeasibilities are guaranteed to be less than
-        solvers.options['feastol'] (default 1e-7).  The gap is less than
-        solvers.options['abstol'] (default 1e-7) or the relative gap is
-        less than solvers.options['reltol'] (default 1e-6).
 
         Termination with status 'unknown' indicates that the algorithm
         failed to find a solution that satisfies the specified tolerances.
@@ -215,43 +218,11 @@ def qp(P, q, G=None, h=None, A=None, b=None, **kwargs):
         If this option is used, the argument b must be in the same format
         as y, the argument A must be a Python function or None, and the
         argument kktsolver is required.
-    Control parameters.
-       The following control parameters can be modified by adding an
-       entry to the dictionary options.
-       options['show_progress'] True/False (default: True)
-       options['maxiters'] positive integer (default: 100)
-       options['refinement'] nonnegative integer (default: 0 for problems
-           with no second-order cone and matrix inequality constraints;
-           1 otherwise)
-       options['abstol'] scalar (default: 1e-7)
-       options['reltol'] scalar (default: 1e-6)
-       options['feastol'] scalar (default: 1e-7).
     """
     import math
     from cvxopt import base, blas, misc
     from cvxopt.base import matrix, spmatrix
-    STEP = 0.99
-    EXPON = 3
-    MAXITERS = 100
-    ABSTOL = 1e-7
-
     dims = None
-
-    options = kwargs.get('options', globals()['options'])
-
-    RELTOL = options.get('reltol', 1e-6)
-    if not isinstance(RELTOL, (float, int, long)):
-        raise ValueError("options['reltol'] must be a scalar")
-
-    if RELTOL <= 0.0 and ABSTOL <= 0.0:
-        raise ValueError("at least one of options['reltol'] and "
-                         "options['abstol'] must be positive")
-
-    FEASTOL = options.get('feastol', 1e-7)
-    if not isinstance(FEASTOL, (float, int, long)) or FEASTOL <= 0.0:
-        raise ValueError("options['feastol'] must be a positive scalar")
-
-    show_progress = options.get('show_progress', True)
 
     kktsolver = 'chol2'
     defaultsolvers = ('ldl', 'ldl2', 'chol', 'chol2')
@@ -297,17 +268,10 @@ def qp(P, q, G=None, h=None, A=None, b=None, **kwargs):
         raise TypeError("'dims['s']' must be a list of nonnegative "
                         "integers")
 
-    try:
-        refinement = options['refinement']
-    except KeyError:
-        if dims['q'] or dims['s']:
-            refinement = 1
-        else:
-            refinement = 0
+    if dims['q'] or dims['s']:
+        refinement = 1
     else:
-        if not isinstance(refinement, (int, long)) or refinement < 0:
-            raise ValueError("options['refinement'] must be a "
-                             "nonnegative integer")
+        refinement = 0
 
     cdim = dims['l'] + sum(dims['q']) + sum([k ** 2 for k in dims['s']])
     if h.size[0] != cdim:
