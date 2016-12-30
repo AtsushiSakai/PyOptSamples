@@ -11,8 +11,7 @@ options = {}
 
 
 def qp(P, q, G=None, h=None, A=None, b=None,
-       initvals=None, kktsolver=None, xnewcopy=None, xdot=None,
-       xaxpy=None, xscal=None, ynewcopy=None, ydot=None, yaxpy=None,
+       xscal=None, ynewcopy=None, ydot=None, yaxpy=None,
        yscal=None, **kwargs):
     """
     Solves a pair of primal and dual convex quadratic cone programs
@@ -70,16 +69,6 @@ def qp(P, q, G=None, h=None, A=None, b=None,
         value is a sparse 'd' matrix of size (0,n).
         b is a dense 'd' matrix of size (p,1).  The default value is a
         dense 'd' matrix of size (0,1).
-        initvals is a dictionary with optional primal and dual starting
-        points initvals['x'], initvals['s'], initvals['y'], initvals['z'].
-        - initvals['x'] is a dense 'd' matrix of size (n,1).
-        - initvals['s'] is a dense 'd' matrix of size (K,1), representing
-          a vector that is strictly positive with respect to the cone C.
-        - initvals['y'] is a dense 'd' matrix of size (p,1).
-        - initvals['z'] is a dense 'd' matrix of size (K,1), representing
-          a vector that is strictly positive with respect to the cone C.
-        A default initialization is used for the variables that are not
-        specified in initvals.
         It is assumed that rank(A) = p and rank([P; A; G]) = n.
         The other arguments are normally not needed.  They make it possible
         to exploit certain types of structure, as described below.
@@ -209,7 +198,6 @@ def qp(P, q, G=None, h=None, A=None, b=None,
         yaxpy.  These arguments are functions defined as follows.
 
         If X is the vector space of primal variables x, then:
-        - xnewcopy(u) creates a new copy of the vector u in X.
         - xdot(u, v) returns the inner product of two vectors u and v in X.
         - xscal(alpha, u) computes u := alpha*u, where alpha is a scalar
           and u is a vector in X.
@@ -283,15 +271,8 @@ def qp(P, q, G=None, h=None, A=None, b=None,
 
     show_progress = options.get('show_progress', True)
 
-    if kktsolver is None:
-        if dims and (dims['q'] or dims['s']):
-            kktsolver = 'chol'
-        else:
-            kktsolver = 'chol2'
+    kktsolver = 'chol2'
     defaultsolvers = ('ldl', 'ldl2', 'chol', 'chol2')
-    if isinstance(kktsolver, str) and kktsolver not in defaultsolvers:
-        raise ValueError("'%s' is not a valid value for kktsolver"
-                         % kktsolver)
 
     # Argument error checking depends on level of customization.
     customkkt = not isinstance(kktsolver, str)
@@ -302,8 +283,7 @@ def qp(P, q, G=None, h=None, A=None, b=None,
             (not matrixA and A is not None)) and not customkkt:
         raise ValueError("use of function valued P, G, A requires a "
                          "user-provided kktsolver")
-    customx = (xnewcopy is not None or xdot is not None or xaxpy is not None or
-               xscal is not None)
+    customx = xscal is not None
     if customx and (matrixP or matrixG or matrixA or not customkkt):
         raise ValueError("use of non-vector type for x requires "
                          "function valued P, G, A and user-provided kktsolver")
@@ -458,28 +438,14 @@ def qp(P, q, G=None, h=None, A=None, b=None,
     #     [ G   0   -W'       ] [ uz ]   [ bz ]
 
     if kktsolver in defaultsolvers:
-        if KKTREG is None and b.size[0] > q.size[0]:
-            raise ValueError("Rank(A) < p or Rank([P; G; A]) < n")
-        if kktsolver == 'ldl':
-            factor = misc.kkt_ldl(G, dims, A, kktreg=KKTREG)
-        elif kktsolver == 'ldl2':
-            factor = misc.kkt_ldl2(G, dims, A)
-        elif kktsolver == 'chol':
-            factor = misc.kkt_chol(G, dims, A)
-        else:
-            factor = misc.kkt_chol2(G, dims, A)
+        factor = misc.kkt_chol2(G, dims, A)
 
         def kktsolver(W):
             return factor(W, P)
 
-    if xnewcopy is None:
-        xnewcopy = matrix
-    if xdot is None:
-        xdot = blas.dot
-    if xaxpy is None:
-        xaxpy = blas.axpy
-    if xscal is None:
-        xscal = blas.scal
+    xdot = blas.dot
+    xaxpy = blas.axpy
+    xscal = blas.scal
 
     def xcopy(x, y):
         xscal(0.0, y)
@@ -514,13 +480,13 @@ def qp(P, q, G=None, h=None, A=None, b=None,
                             matrix(0.0, (0, 1)), 'beta': [], 'v': [], 'r': [], 'rti': []})
         except ArithmeticError:
             raise ValueError("Rank(A) < p or Rank([P; A; G]) < n")
-        x = xnewcopy(q)
+        x = matrix(q)
         xscal(-1.0, x)
         y = ynewcopy(b)
         f3(x, y, matrix(0.0, (0, 1)))
 
         # dres = || P*x + q + A'*y || / resx0
-        rx = xnewcopy(q)
+        rx = matrix(q)
         fP(x, rx, beta=1.0)
         pcost = 0.5 * (xdot(x, rx) + xdot(x, q))
         fA(y, rx, beta=1.0, trans='T')
@@ -545,118 +511,74 @@ def qp(P, q, G=None, h=None, A=None, b=None,
                 'primal infeasibility': pres, 'dual infeasibility': dres,
                 'iterations': 0}
 
-    x, y = xnewcopy(q), ynewcopy(b)
+    x, y = matrix(q), ynewcopy(b)
     s, z = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
 
-    if initvals is None:
+    # Factor
+    #
+    #     [ P   A'  G' ]
+    #     [ A   0   0  ].
+    #     [ G   0  -I  ]
 
-        # Factor
-        #
-        #     [ P   A'  G' ]
-        #     [ A   0   0  ].
-        #     [ G   0  -I  ]
+    W = {}
+    W['d'] = matrix(1.0, (dims['l'], 1))
+    W['di'] = matrix(1.0, (dims['l'], 1))
+    W['v'] = [matrix(0.0, (m, 1)) for m in dims['q']]
+    W['beta'] = len(dims['q']) * [1.0]
+    for v in W['v']:
+        v[0] = 1.0
+    W['r'] = [matrix(0.0, (m, m)) for m in dims['s']]
+    W['rti'] = [matrix(0.0, (m, m)) for m in dims['s']]
+    for r in W['r']:
+        r[::r.size[0] + 1] = 1.0
+    for rti in W['rti']:
+        rti[::rti.size[0] + 1] = 1.0
+    try:
+        f = kktsolver(W)
+    except ArithmeticError:
+        raise ValueError("Rank(A) < p or Rank([P; A; G]) < n")
 
-        W = {}
-        W['d'] = matrix(1.0, (dims['l'], 1))
-        W['di'] = matrix(1.0, (dims['l'], 1))
-        W['v'] = [matrix(0.0, (m, 1)) for m in dims['q']]
-        W['beta'] = len(dims['q']) * [1.0]
-        for v in W['v']:
-            v[0] = 1.0
-        W['r'] = [matrix(0.0, (m, m)) for m in dims['s']]
-        W['rti'] = [matrix(0.0, (m, m)) for m in dims['s']]
-        for r in W['r']:
-            r[::r.size[0] + 1] = 1.0
-        for rti in W['rti']:
-            rti[::rti.size[0] + 1] = 1.0
-        try:
-            f = kktsolver(W)
-        except ArithmeticError:
-            raise ValueError("Rank(A) < p or Rank([P; A; G]) < n")
+    # Solve
+    #
+    #     [ P   A'  G' ]   [ x ]   [ -q ]
+    #     [ A   0   0  ] * [ y ] = [  b ].
+    #     [ G   0  -I  ]   [ z ]   [  h ]
 
-        # Solve
-        #
-        #     [ P   A'  G' ]   [ x ]   [ -q ]
-        #     [ A   0   0  ] * [ y ] = [  b ].
-        #     [ G   0  -I  ]   [ z ]   [  h ]
+    xcopy(q, x)
+    xscal(-1.0, x)
+    ycopy(b, y)
+    blas.copy(h, z)
+    try:
+        f(x, y, z)
+    except ArithmeticError:
+        raise ValueError("Rank(A) < p or Rank([P; G; A]) < n")
+    blas.copy(z, s)
+    blas.scal(-1.0, s)
 
-        xcopy(q, x)
-        xscal(-1.0, x)
-        ycopy(b, y)
-        blas.copy(h, z)
-        try:
-            f(x, y, z)
-        except ArithmeticError:
-            raise ValueError("Rank(A) < p or Rank([P; G; A]) < n")
-        blas.copy(z, s)
-        blas.scal(-1.0, s)
+    nrms = misc.snrm2(s, dims)
+    ts = misc.max_step(s, dims)
+    if ts >= -1e-8 * max(nrms, 1.0):
+        a = 1.0 + ts
+        s[:dims['l']] += a
+        s[indq[:-1]] += a
+        ind = dims['l'] + sum(dims['q'])
+        for m in dims['s']:
+            s[ind: ind + m * m: m + 1] += a
+            ind += m ** 2
 
-        nrms = misc.snrm2(s, dims)
-        ts = misc.max_step(s, dims)
-        if ts >= -1e-8 * max(nrms, 1.0):
-            a = 1.0 + ts
-            s[:dims['l']] += a
-            s[indq[:-1]] += a
-            ind = dims['l'] + sum(dims['q'])
-            for m in dims['s']:
-                s[ind: ind + m * m: m + 1] += a
-                ind += m ** 2
+    nrmz = misc.snrm2(z, dims)
+    tz = misc.max_step(z, dims)
+    if tz >= -1e-8 * max(nrmz, 1.0):
+        a = 1.0 + tz
+        z[:dims['l']] += a
+        z[indq[:-1]] += a
+        ind = dims['l'] + sum(dims['q'])
+        for m in dims['s']:
+            z[ind: ind + m * m: m + 1] += a
+            ind += m ** 2
 
-        nrmz = misc.snrm2(z, dims)
-        tz = misc.max_step(z, dims)
-        if tz >= -1e-8 * max(nrmz, 1.0):
-            a = 1.0 + tz
-            z[:dims['l']] += a
-            z[indq[:-1]] += a
-            ind = dims['l'] + sum(dims['q'])
-            for m in dims['s']:
-                z[ind: ind + m * m: m + 1] += a
-                ind += m ** 2
-
-    else:
-
-        if 'x' in initvals:
-            xcopy(initvals['x'], x)
-        else:
-            xscal(0.0, x)
-
-        if 's' in initvals:
-            blas.copy(initvals['s'], s)
-            # ts = min{ t | s + t*e >= 0 }
-            if misc.max_step(s, dims) >= 0:
-                raise ValueError("initial s is not positive")
-        else:
-            s[: dims['l']] = 1.0
-            ind = dims['l']
-            for m in dims['q']:
-                s[ind] = 1.0
-                ind += m
-            for m in dims['s']:
-                s[ind: ind + m * m: m + 1] = 1.0
-                ind += m ** 2
-
-        if 'y' in initvals:
-            ycopy(initvals['y'], y)
-        else:
-            yscal(0.0, y)
-
-        if 'z' in initvals:
-            blas.copy(initvals['z'], z)
-            # tz = min{ t | z + t*e >= 0 }
-            if misc.max_step(z, dims) >= 0:
-                raise ValueError("initial z is not positive")
-        else:
-            z[: dims['l']] = 1.0
-            ind = dims['l']
-            for m in dims['q']:
-                z[ind] = 1.0
-                ind += m
-            for m in dims['s']:
-                z[ind: ind + m * m: m + 1] = 1.0
-                ind += m ** 2
-
-    rx, ry, rz = xnewcopy(q), ynewcopy(b), matrix(0.0, (cdim, 1))
-    dx, dy = xnewcopy(x), ynewcopy(y)
+    rx, ry, rz = matrix(q), ynewcopy(b), matrix(0.0, (cdim, 1))
+    dx, dy = matrix(x), ynewcopy(y)
     dz, ds = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
     lmbda = matrix(0.0, (dims['l'] + sum(dims['q']) + sum(dims['s']), 1))
     lmbdasq = matrix(0.0, (dims['l'] + sum(dims['q']) + sum(dims['s']), 1))
@@ -824,10 +746,10 @@ def qp(P, q, G=None, h=None, A=None, b=None,
 
         if iters == 0:
             if refinement or DEBUG:
-                wx, wy = xnewcopy(q), ynewcopy(b)
+                wx, wy = matrix(q), ynewcopy(b)
                 wz, ws = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
             if refinement:
-                wx2, wy2 = xnewcopy(q), ynewcopy(b)
+                wx2, wy2 = matrix(q), ynewcopy(b)
                 wz2, ws2 = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
 
         def f4(x, y, z, s):
