@@ -5,6 +5,7 @@ Simple sample code to solve quadratic programming with cvxopt
 
 author Atsushi Sakai
 """
+import numpy as np
 
 options = {}
 
@@ -363,6 +364,9 @@ def qp(P, q, G=None, h=None, A=None, b=None,
                     pass
                 else:
                     xscal(beta, y)
+        else:
+            A = spmatrix([], [], [], (0, q.size[0]))
+            matrixA = True
     if matrixA:
         if A.typecode != 'd' or A.size[1] != q.size[0]:
             raise TypeError("'A' must be a 'd' matrix with %d columns"
@@ -959,17 +963,41 @@ if __name__ == '__main__':
     h = matrix([0.0, 0.0])
     A = matrix([1.0, 1.0], (1, 2))
     b = matrix(1.0)
-    print("Q")
-    print(Q)
-    print("p")
-    print(p)
-    print("G")
-    print(G)
-    print("h")
-    print(h)
-    print("A")
-    print(A)
-    print("b")
-    print(b)
+    #  print("Q")
+    #  print(Q)
+    #  print("p")
+    #  print(p)
+    #  print("G")
+    #  print(G)
+    #  print("h")
+    #  print(h)
+    #  print("A")
+    #  print(A)
+    #  print("b")
+    #  print(b)
     sol = qp(Q, p, G, h, A, b)
     print(sol['x'])
+
+    assert sol['x'][0] - 0.25 < 0.01
+    assert sol['x'][1] - 0.75 < 0.01
+
+    P = matrix(np.diag([1.0, 0.0]))
+    q = matrix(np.array([3.0, 4.0]))
+    G = matrix(np.array([[-1.0, 0.0], [0, -1.0], [-1.0, -3.0], [2.0, 5.0], [3.0, 4.0]]))
+    h = matrix(np.array([0.0, 0.0, -15.0, 100.0, 80.0]))
+
+    sol = qp(P, q, G=G, h=h)
+    print(sol)
+    print(sol["x"])
+    assert sol['x'][0] - 0.00 < 0.01
+    assert sol['x'][1] - 5.00 < 0.01
+
+    P = matrix(np.diag([1.0, 0.0]))
+    q = matrix(np.array([3.0, 4.0]))
+    A = matrix([1.0, 1.0], (1, 2))
+    b = matrix(1.0)
+    sol = qp(P, q, A=A, b=b)  # no need iterration?
+    print(sol)
+    print(sol["x"])
+    assert sol['x'][0] - 1.00 < 0.01
+    assert sol['x'][1] - 0.00 < 0.01
