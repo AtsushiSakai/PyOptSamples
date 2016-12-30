@@ -8,6 +8,7 @@ author Atsushi Sakai
 import numpy as np
 import math
 
+
 STEP = 0.99
 EXPON = 3
 MAXITERS = 100
@@ -17,12 +18,377 @@ FEASTOL = 1e-7
 show_progress = True
 
 
-def solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0):
+def kkt_chol2(G, dims, A, mnl=0):
+    """
+    Solution of KKT equations by reduction to a 2 x 2 system, a sparse
+    or dense Cholesky factorization of order n to eliminate the 1,1
+    block, and a sparse or dense Cholesky factorization of order p.
+    Implemented only for problems with no second-order or semidefinite
+    cone constraints.
+
+    Returns a function that (1) computes Cholesky factorizations of
+    the matrices
+
+        S = H + GG' * W^{-1} * W^{-T} * GG,
+        K = A * S^{-1} *A'
+
+    or (if K is singular in the first call to the function), the matrices
+
+        S = H + GG' * W^{-1} * W^{-T} * GG + A' * A,
+        K = A * S^{-1} * A',
+
+    given H, Df, W, where GG = [Df; G], and (2) returns a function for
+    solving
+
+        [ H     A'   GG'   ]   [ ux ]   [ bx ]
+        [ A     0    0     ] * [ uy ] = [ by ].
+        [ GG    0   -W'*W  ]   [ uz ]   [ bz ]
+
+    H is n x n,  A is p x n, Df is mnl x n, G is dims['l'] x n.
+    """
+    from cvxopt import base, blas, lapack, cholmod
+    from cvxopt.base import matrix, spmatrix
+
+    if dims['q'] or dims['s']:
+        raise ValueError("kktsolver option 'kkt_chol2' is implemented "
+                         "only for problems with no second-order or semidefinite cone "
+                         "constraints")
+    p, n = A.size
+    ml = dims['l']
+    F = {'firstcall': True, 'singular': False}
+
+    def factor(W, H=None, Df=None):
+
+        if F['firstcall']:
+            if type(G) is matrix:
+                F['Gs'] = matrix(0.0, G.size)
+            else:
+                F['Gs'] = spmatrix(0.0, G.I, G.J, G.size)
+            if mnl:
+                if type(Df) is matrix:
+                    F['Dfs'] = matrix(0.0, Df.size)
+                else:
+                    F['Dfs'] = spmatrix(0.0, Df.I, Df.J, Df.size)
+            if (mnl and type(Df) is matrix) or type(G) is matrix or \
+                    type(H) is matrix:
+                F['S'] = matrix(0.0, (n, n))
+                F['K'] = matrix(0.0, (p, p))
+            else:
+                F['S'] = spmatrix([], [], [], (n, n), 'd')
+                F['Sf'] = None
+                if type(A) is matrix:
+                    F['K'] = matrix(0.0, (p, p))
+                else:
+                    F['K'] = spmatrix([], [], [], (p, p), 'd')
+
+        # Dfs = Wnl^{-1} * Df
+        if mnl:
+            base.gemm(spmatrix(W['dnli'], list(range(mnl)),
+                               list(range(mnl))), Df, F['Dfs'], partial=True)
+
+        # Gs = Wl^{-1} * G.
+        base.gemm(spmatrix(W['di'], list(range(ml)), list(range(ml))),
+                  G, F['Gs'], partial=True)
+
+        if F['firstcall']:
+            base.syrk(F['Gs'], F['S'], trans='T')
+            if mnl:
+                base.syrk(F['Dfs'], F['S'], trans='T', beta=1.0)
+            if H is not None:
+                F['S'] += H
+            try:
+                if type(F['S']) is matrix:
+                    lapack.potrf(F['S'])
+                else:
+                    F['Sf'] = cholmod.symbolic(F['S'])
+                    cholmod.numeric(F['S'], F['Sf'])
+            except ArithmeticError:
+                F['singular'] = True
+                if type(A) is matrix and type(F['S']) is spmatrix:
+                    F['S'] = matrix(0.0, (n, n))
+                base.syrk(F['Gs'], F['S'], trans='T')
+                if mnl:
+                    base.syrk(F['Dfs'], F['S'], trans='T', beta=1.0)
+                base.syrk(A, F['S'], trans='T', beta=1.0)
+                if H is not None:
+                    F['S'] += H
+                if type(F['S']) is matrix:
+                    lapack.potrf(F['S'])
+                else:
+                    F['Sf'] = cholmod.symbolic(F['S'])
+                    cholmod.numeric(F['S'], F['Sf'])
+            F['firstcall'] = False
+
+        else:
+            base.syrk(F['Gs'], F['S'], trans='T', partial=True)
+            if mnl:
+                base.syrk(F['Dfs'], F['S'], trans='T', beta=1.0,
+                          partial=True)
+            if H is not None:
+                F['S'] += H
+            if F['singular']:
+                base.syrk(A, F['S'], trans='T', beta=1.0, partial=True)
+            if type(F['S']) is matrix:
+                lapack.potrf(F['S'])
+            else:
+                cholmod.numeric(F['S'], F['Sf'])
+
+        if type(F['S']) is matrix:
+            # Asct := L^{-1}*A'.  Factor K = Asct'*Asct.
+            if type(A) is matrix:
+                Asct = A.T
+            else:
+                Asct = matrix(A.T)
+            blas.trsm(F['S'], Asct)
+            blas.syrk(Asct, F['K'], trans='T')
+            lapack.potrf(F['K'])
+
+        else:
+            # Asct := L^{-1}*P*A'.  Factor K = Asct'*Asct.
+            if type(A) is matrix:
+                Asct = A.T
+                cholmod.solve(F['Sf'], Asct, sys=7)
+                cholmod.solve(F['Sf'], Asct, sys=4)
+                blas.syrk(Asct, F['K'], trans='T')
+                lapack.potrf(F['K'])
+            else:
+                Asct = cholmod.spsolve(F['Sf'], A.T, sys=7)
+                Asct = cholmod.spsolve(F['Sf'], Asct, sys=4)
+                base.syrk(Asct, F['K'], trans='T')
+                Kf = cholmod.symbolic(F['K'])
+                cholmod.numeric(F['K'], Kf)
+
+        def solve(x, y, z):
+
+            # Solve
+            #
+            #     [ H          A'  GG'*W^{-1} ]   [ ux   ]   [ bx        ]
+            #     [ A          0   0          ] * [ uy   ] = [ by        ]
+            #     [ W^{-T}*GG  0   -I         ]   [ W*uz ]   [ W^{-T}*bz ]
+            #
+            # and return ux, uy, W*uz.
+            #
+            # If not F['singular']:
+            #
+            #     K*uy = A * S^{-1} * ( bx + GG'*W^{-1}*W^{-T}*bz ) - by
+            #     S*ux = bx + GG'*W^{-1}*W^{-T}*bz - A'*uy
+            #     W*uz = W^{-T} * ( GG*ux - bz ).
+            #
+            # If F['singular']:
+            #
+            #     K*uy = A * S^{-1} * ( bx + GG'*W^{-1}*W^{-T}*bz + A'*by )
+            #            - by
+            #     S*ux = bx + GG'*W^{-1}*W^{-T}*bz + A'*by - A'*y.
+            #     W*uz = W^{-T} * ( GG*ux - bz ).
+
+            # z := W^{-1} * z = W^{-1} * bz
+            scale(z, W, trans='T', inverse='I')
+
+            # If not F['singular']:
+            #     x := L^{-1} * P * (x + GGs'*z)
+            #        = L^{-1} * P * (x + GG'*W^{-1}*W^{-T}*bz)
+            #
+            # If F['singular']:
+            #     x := L^{-1} * P * (x + GGs'*z + A'*y))
+            #        = L^{-1} * P * (x + GG'*W^{-1}*W^{-T}*bz + A'*y)
+
+            if mnl:
+                base.gemv(F['Dfs'], z, x, trans='T', beta=1.0)
+            base.gemv(F['Gs'], z, x, offsetx=mnl, trans='T',
+                      beta=1.0)
+            if F['singular']:
+                base.gemv(A, y, x, trans='T', beta=1.0)
+            if type(F['S']) is matrix:
+                blas.trsv(F['S'], x)
+            else:
+                cholmod.solve(F['Sf'], x, sys=7)
+                cholmod.solve(F['Sf'], x, sys=4)
+
+            # y := K^{-1} * (Asc*x - y)
+            #    = K^{-1} * (A * S^{-1} * (bx + GG'*W^{-1}*W^{-T}*bz) - by)
+            #      (if not F['singular'])
+            #    = K^{-1} * (A * S^{-1} * (bx + GG'*W^{-1}*W^{-T}*bz +
+            #      A'*by) - by)
+            #      (if F['singular']).
+
+            base.gemv(Asct, x, y, trans='T', beta=-1.0)
+            if type(F['K']) is matrix:
+                lapack.potrs(F['K'], y)
+            else:
+                cholmod.solve(Kf, y)
+
+            # x := P' * L^{-T} * (x - Asc'*y)
+            #    = S^{-1} * (bx + GG'*W^{-1}*W^{-T}*bz - A'*y)
+            #      (if not F['singular'])
+            #    = S^{-1} * (bx + GG'*W^{-1}*W^{-T}*bz + A'*by - A'*y)
+            #      (if F['singular'])
+
+            base.gemv(Asct, y, x, alpha=-1.0, beta=1.0)
+            if type(F['S']) is matrix:
+                blas.trsv(F['S'], x, trans='T')
+            else:
+                cholmod.solve(F['Sf'], x, sys=5)
+                cholmod.solve(F['Sf'], x, sys=8)
+
+            # W*z := GGs*x - z = W^{-T} * (GG*x - bz)
+            if mnl:
+                base.gemv(F['Dfs'], x, z, beta=-1.0)
+            base.gemv(F['Gs'], x, z, beta=-1.0, offsety=mnl)
+
+        return solve
+
+    return factor
+
+
+def scale(x, W, trans='N', inverse='N'):
+    """
+    Applies Nesterov-Todd scaling or its inverse.
+
+    Computes
+
+         x := W*x        (trans is 'N', inverse = 'N')
+         x := W^T*x      (trans is 'T', inverse = 'N')
+         x := W^{-1}*x   (trans is 'N', inverse = 'I')
+         x := W^{-T}*x   (trans is 'T', inverse = 'I').
+
+    x is a dense 'd' matrix.
+
+    W is a dictionary with entries:
+
+    - W['dnl']: positive vector
+    - W['dnli']: componentwise inverse of W['dnl']
+    - W['d']: positive vector
+    - W['di']: componentwise inverse of W['d']
+    - W['v']: lists of 2nd order cone vectors with unit hyperbolic norms
+    - W['beta']: list of positive numbers
+    - W['r']: list of square matrices
+    - W['rti']: list of square matrices.  rti[k] is the inverse transpose
+      of r[k].
+
+    The 'dnl' and 'dnli' entries are optional, and only present when the
+    function is called from the nonlinear solver.
+    """
+    from cvxopt import blas
+
+    ind = 0
+
+    # Scaling for nonlinear component xk is xk := dnl .* xk; inverse
+    # scaling is xk ./ dnl = dnli .* xk, where dnl = W['dnl'],
+    # dnli = W['dnli'].
+
+    if 'dnl' in W:
+        if inverse == 'N':
+            w = W['dnl']
+        else:
+            w = W['dnli']
+        for k in range(x.size[1]):
+            blas.tbmv(w, x, n=w.size[0], k=0, ldA=1, offsetx=k * x.size[0])
+        ind += w.size[0]
+
+    # Scaling for linear 'l' component xk is xk := d .* xk; inverse
+    # scaling is xk ./ d = di .* xk, where d = W['d'], di = W['di'].
+
+    if inverse == 'N':
+        w = W['d']
+    else:
+        w = W['di']
+    for k in range(x.size[1]):
+        blas.tbmv(w, x, n=w.size[0], k=0, ldA=1, offsetx=k * x.size[0] + ind)
+    ind += w.size[0]
+
+    # Scaling for 'q' component is
+    #
+    #     xk := beta * (2*v*v' - J) * xk
+    #         = beta * (2*v*(xk'*v)' - J*xk)
+    #
+    # where beta = W['beta'][k], v = W['v'][k], J = [1, 0; 0, -I].
+    #
+    # Inverse scaling is
+    #
+    #     xk := 1/beta * (2*J*v*v'*J - J) * xk
+    #         = 1/beta * (-J) * (2*v*((-J*xk)'*v)' + xk).
+
+    w = matrix(0.0, (x.size[1], 1))
+    for k in range(len(W['v'])):
+        v = W['v'][k]
+        m = v.size[0]
+        if inverse == 'I':
+            blas.scal(-1.0, x, offset=ind, inc=x.size[0])
+        blas.gemv(x, v, w, trans='T', m=m, n=x.size[1], offsetA=ind, ldA=x.size[0])
+        blas.scal(-1.0, x, offset=ind, inc=x.size[0])
+        blas.ger(v, w, x, alpha=2.0, m=m, n=x.size[1], ldA=x.size[0], offsetA=ind)
+        if inverse == 'I':
+            blas.scal(-1.0, x, offset=ind, inc=x.size[0])
+            a = 1.0 / W['beta'][k]
+        else:
+            a = W['beta'][k]
+        for i in range(x.size[1]):
+            blas.scal(a, x, n=m, offset=ind + i * x.size[0])
+        ind += m
+
+    # Scaling for 's' component xk is
+    #
+    #     xk := vec( r' * mat(xk) * r )  if trans = 'N'
+    #     xk := vec( r * mat(xk) * r' )  if trans = 'T'.
+    #
+    # r is kth element of W['r'].
+    #
+    # Inverse scaling is
+    #
+    #     xk := vec( rti * mat(xk) * rti' )  if trans = 'N'
+    #     xk := vec( rti' * mat(xk) * rti )  if trans = 'T'.
+    #
+    # rti is kth element of W['rti'].
+
+    maxn = max([0] + [r.size[0] for r in W['r']])
+    a = matrix(0.0, (maxn, maxn))
+    for k in range(len(W['r'])):
+
+        if inverse == 'N':
+            r = W['r'][k]
+            if trans == 'N':
+                t = 'T'
+            else:
+                t = 'N'
+        else:
+            r = W['rti'][k]
+            t = trans
+
+        n = r.size[0]
+        for i in range(x.size[1]):
+
+            # scale diagonal of xk by 0.5
+            blas.scal(0.5, x, offset=ind + i * x.size[0], inc=n + 1, n=n)
+
+            # a = r*tril(x) (t is 'N') or a = tril(x)*r  (t is 'T')
+            blas.copy(r, a)
+            if t == 'N':
+                blas.trmm(x, a, side='R', m=n, n=n, ldA=n, ldB=n,
+                          offsetA=ind + i * x.size[0])
+            else:
+                blas.trmm(x, a, side='L', m=n, n=n, ldA=n, ldB=n,
+                          offsetA=ind + i * x.size[0])
+
+            # x := (r*a' + a*r')  if t is 'N'
+            # x := (r'*a + a'*r)  if t is 'T'
+            blas.syr2k(r, a, x, trans=t, n=n, k=n, ldB=n, ldC=n,
+                       offsetC=ind + i * x.size[0])
+
+        ind += n ** 2
+
+
+def solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0, dims):
     # Solve
     #
     #     [ P  A' ] [ x ]   [ -q ]
     #     [       ] [   ] = [    ].
     #     [ A  0  ] [ y ]   [  b ]
+
+    #  print(G)
+    #  factor = kkt_chol2(G, dims, A)
+    #  W = {'d': matrix(0.0, (0, 1)), 'di': matrix(0.0, (0, 1)), 'beta': [], 'v': [], 'r': [], 'rti': []}
+    #  print(P)
+    #  solver = factor(W, P)
 
     try:
         f3 = kktsolver({'d': matrix(0.0, (0, 1)), 'di':
@@ -33,32 +399,8 @@ def solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0):
     x = -1.0 * matrix(q)
     y = matrix(b)
     f3(x, y, matrix(0.0, (0, 1)))
+    #  solver(x, y, matrix(0.0, (0, 1)))
     return {'status': 'optimal', 'x': x, 'y': y}
-
-    # dres = || P*x + q + A'*y || / resx0
-    #  rx = matrix(q)
-    #  fP(x, rx, beta=1.0)
-    #  pcost = 0.5 * (xdot(x, rx) + xdot(x, q))
-    #  fA(y, rx, beta=1.0, trans='T')
-    #  dres = math.sqrt(xdot(rx, rx)) / resx0
-
-    #  # pres = || A*x - b || / resy0
-    #  ry = ynewcopy(b)
-    #  fA(x, ry, alpha=1.0, beta=-1.0)
-    #  pres = math.sqrt(ydot(ry, ry)) / resy0
-
-    #  pcost = 0.0
-    #  pres = 0.0
-    #  dres = 0.0
-
-    #  return {'status': 'optimal', 'x': x, 'y': y, 'z':
-    #  matrix(0.0, (0, 1)), 's': matrix(0.0, (0, 1)),
-    #  'gap': 0.0, 'relgap': 0.0,
-    #  'primal objective': pcost,
-    #  'dual objective': pcost,
-    #  'primal slack': 0.0, 'dual slack': 0.0,
-    #  'primal infeasibility': pres, 'dual infeasibility': dres,
-    #  'iterations': 0}
 
 
 def qp(P, q, G=None, h=None, A=None, b=None):
@@ -405,7 +747,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     #     [ G   0   -W'       ] [ uz ]   [ bz ]
 
     if kktsolver in defaultsolvers:
-        factor = misc.kkt_chol2(G, dims, A)
+        factor = kkt_chol2(G, dims, A)
 
         def kktsolver(W):
             return factor(W, P)
@@ -432,7 +774,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     resz0 = max(1.0, misc.snrm2(h, dims))
 
     if cdim == 0:
-        return solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0)
+        return solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0, dims)
 
     x, y = matrix(q), ynewcopy(b)
     s, z = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
