@@ -10,10 +10,10 @@ __all__ = []
 options = {}
 
 
-def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
-           initvals=None, kktsolver=None, xnewcopy=None, xdot=None,
-           xaxpy=None, xscal=None, ynewcopy=None, ydot=None, yaxpy=None,
-           yscal=None, **kwargs):
+def qp(P, q, G=None, h=None, A=None, b=None,
+       initvals=None, kktsolver=None, xnewcopy=None, xdot=None,
+       xaxpy=None, xscal=None, ynewcopy=None, ydot=None, yaxpy=None,
+       yscal=None, **kwargs):
     """
     Solves a pair of primal and dual convex quadratic cone programs
         minimize    (1/2)*x'*P*x + q'*x
@@ -58,24 +58,24 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
         in V = R^ml x R^mq[0] x ... x R^mq[N-1] x S^ms[0] x ... x S^ms[M-1]
         stored as a column vector
             [ v_0; v_1; ...; v_N; vec(v_{N+1}); ...; vec(v_{N+M}) ].
-        Here, if u is a symmetric matrix of order m, then vec(u) is the 
+        Here, if u is a symmetric matrix of order m, then vec(u) is the
         matrix u stored in column major order as a vector of length m**2.
-        We use BLAS unpacked 'L' storage, i.e., the entries in vec(u) 
-        corresponding to the strictly upper triangular entries of u are 
+        We use BLAS unpacked 'L' storage, i.e., the entries in vec(u)
+        corresponding to the strictly upper triangular entries of u are
         not referenced.
         h is a dense 'd' matrix of size (K,1), representing a vector in V,
         in the same format as the columns of G.
 
         A is a dense or sparse 'd' matrix of size (p,n).   The default
         value is a sparse 'd' matrix of size (0,n).
-        b is a dense 'd' matrix of size (p,1).  The default value is a 
+        b is a dense 'd' matrix of size (p,1).  The default value is a
         dense 'd' matrix of size (0,1).
-        initvals is a dictionary with optional primal and dual starting 
+        initvals is a dictionary with optional primal and dual starting
         points initvals['x'], initvals['s'], initvals['y'], initvals['z'].
-        - initvals['x'] is a dense 'd' matrix of size (n,1).   
+        - initvals['x'] is a dense 'd' matrix of size (n,1).
         - initvals['s'] is a dense 'd' matrix of size (K,1), representing
-          a vector that is strictly positive with respect to the cone C.  
-        - initvals['y'] is a dense 'd' matrix of size (p,1).  
+          a vector that is strictly positive with respect to the cone C.
+        - initvals['y'] is a dense 'd' matrix of size (p,1).
         - initvals['z'] is a dense 'd' matrix of size (K,1), representing
           a vector that is strictly positive with respect to the cone C.
         A default initialization is used for the variables that are not
@@ -85,60 +85,60 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
         to exploit certain types of structure, as described below.
     Output arguments.
         Returns a dictionary with keys 'status', 'x', 's', 'z', 'y',
-        'primal objective', 'dual objective', 'gap', 'relative gap', 
+        'primal objective', 'dual objective', 'gap', 'relative gap',
         'primal infeasibility', 'dual infeasibility', 'primal slack',
-        'dual slack', 'iterations'. 
+        'dual slack', 'iterations'.
         The 'status' field has values 'optimal' or 'unknown'.  'iterations'
         is the number of iterations taken.
-        If the status is 'optimal', 'x', 's', 'y', 'z' are an approximate 
-        solution of the primal and dual optimality conditions   
-              G*x + s = h,  A*x = b  
-              P*x + G'*z + A'*y + q = 0 
+        If the status is 'optimal', 'x', 's', 'y', 'z' are an approximate
+        solution of the primal and dual optimality conditions
+              G*x + s = h,  A*x = b
+              P*x + G'*z + A'*y + q = 0
               s >= 0,  z >= 0
               s'*z = 0.
-        If the status is 'unknown', 'x', 'y', 's', 'z' are the last 
-        iterates before termination.  These satisfy s > 0 and z > 0, 
+        If the status is 'unknown', 'x', 'y', 's', 'z' are the last
+        iterates before termination.  These satisfy s > 0 and z > 0,
         but are not necessarily feasible.
         The values of the other fields are defined as follows.
         - 'primal objective': the primal objective (1/2)*x'*P*x + q'*x.
-        - 'dual objective': the dual objective 
+        - 'dual objective': the dual objective
               L(x,y,z) = (1/2)*x'*P*x + q'*x + z'*(G*x - h) + y'*(A*x-b).
-        - 'gap': the duality gap s'*z.  
-        - 'relative gap': the relative gap, defined as 
-              gap / -primal objective 
-          if the primal objective is negative, 
+        - 'gap': the duality gap s'*z.
+        - 'relative gap': the relative gap, defined as
+              gap / -primal objective
+          if the primal objective is negative,
               gap / dual objective
           if the dual objective is positive, and None otherwise.
         - 'primal infeasibility': the residual in the primal constraints,
-          defined as the maximum of the residual in the inequalities 
-              || G*x + s + h || / max(1, ||h||) 
-          and the residual in the equalities 
+          defined as the maximum of the residual in the inequalities
+              || G*x + s + h || / max(1, ||h||)
+          and the residual in the equalities
               || A*x - b || / max(1, ||b||).
         - 'dual infeasibility': the residual in the dual constraints,
-          defined as 
+          defined as
               || P*x + G'*z + A'*y + q || / max(1, ||q||).
-        - 'primal slack': the smallest primal slack, sup {t | s >= t*e }, 
-           where 
+        - 'primal slack': the smallest primal slack, sup {t | s >= t*e },
+           where
               e = ( e_0, e_1, ..., e_N, e_{N+1}, ..., e_{M+N} )
-          is the identity vector in C.  e_0 is an ml-vector of ones, 
+          is the identity vector in C.  e_0 is an ml-vector of ones,
           e_k, k = 1,..., N, is the unit vector (1,0,...,0) of length
           mq[k], and e_k = vec(I) where I is the identity matrix of order
           ms[k].
         - 'dual slack': the smallest dual slack, sup {t | z >= t*e }.
         If the exit status is 'optimal', then the primal and dual
-        infeasibilities are guaranteed to be less than 
-        solvers.options['feastol'] (default 1e-7).  The gap is less than 
-        solvers.options['abstol'] (default 1e-7) or the relative gap is 
+        infeasibilities are guaranteed to be less than
+        solvers.options['feastol'] (default 1e-7).  The gap is less than
+        solvers.options['abstol'] (default 1e-7) or the relative gap is
         less than solvers.options['reltol'] (default 1e-6).
 
-        Termination with status 'unknown' indicates that the algorithm 
+        Termination with status 'unknown' indicates that the algorithm
         failed to find a solution that satisfies the specified tolerances.
-        In some cases, the returned solution may be fairly accurate.  If 
+        In some cases, the returned solution may be fairly accurate.  If
         the primal and dual infeasibilities, the gap, and the relative gap
-        are small, then x, y, s, z are close to optimal.  
+        are small, then x, y, s, z are close to optimal.
     Advanced usage.
         Three mechanisms are provided to express problem structure.
-        1.  The user can provide a customized routine for solving linear 
+        1.  The user can provide a customized routine for solving linear
         equations (`KKT systems')
             [ P   A'  G'    ] [ ux ]   [ bx ]
             [ A   0   0     ] [ uy ] = [ by ].
@@ -168,25 +168,25 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
         - W['r'] is a list [ r_0, ..., r_{M-1} ]
         - W['rti'] is a list [ rti_0, ..., rti_{M-1} ], with rti_k the
           inverse of the transpose of r_k.
-        The call g = kktsolver(W) should return a function g that solves 
-        the KKT system by g(x, y, z).  On entry, x, y, z contain the 
+        The call g = kktsolver(W) should return a function g that solves
+        the KKT system by g(x, y, z).  On entry, x, y, z contain the
         righthand side bx, by, bz.  On exit, they contain the solution,
-        with uz scaled, the argument z contains W*uz.  In other words, 
+        with uz scaled, the argument z contains W*uz.  In other words,
         on exit x, y, z are the solution of
             [ P   A'  G'*W^{-1} ] [ ux ]   [ bx ]
             [ A   0   0         ] [ uy ] = [ by ].
             [ G   0   -W'       ] [ uz ]   [ bz ]
-        2.  The linear operators P*u, G*u and A*u can be specified 
-        by providing Python functions instead of matrices.  This can only 
-        be done in combination with 1. above, i.e., it requires the 
+        2.  The linear operators P*u, G*u and A*u can be specified
+        by providing Python functions instead of matrices.  This can only
+        be done in combination with 1. above, i.e., it requires the
         kktsolver argument.
-        If P is a function, the call P(u, v, alpha, beta) should evaluate 
+        If P is a function, the call P(u, v, alpha, beta) should evaluate
         the matrix-vectors product
             v := alpha * P * u + beta * v.
-        The arguments u and v are required.  The other arguments have 
-        default values alpha = 1.0, beta = 0.0. 
+        The arguments u and v are required.  The other arguments have
+        default values alpha = 1.0, beta = 0.0.
 
-        If G is a function, the call G(u, v, alpha, beta, trans) should 
+        If G is a function, the call G(u, v, alpha, beta, trans) should
         evaluate the matrix-vector products
             v := alpha * G * u + beta * v  if trans is 'N'
             v := alpha * G' * u + beta * v  if trans is 'T'.
@@ -198,14 +198,14 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
             v := alpha * A' * u + beta * v if trans is 'T'.
         The arguments u and v are required.  The other arguments
         have default values alpha = 1.0, beta = 0.0, trans = 'N'.
-        3.  Instead of using the default representation of the primal 
-        variable x and the dual variable y as one-column 'd' matrices, 
-        we can represent these variables and the corresponding parameters 
+        3.  Instead of using the default representation of the primal
+        variable x and the dual variable y as one-column 'd' matrices,
+        we can represent these variables and the corresponding parameters
         q and b by arbitrary Python objects (matrices, lists, dictionaries,
         etc).  This can only be done in combination with 1. and 2. above,
-        i.e., it requires a user-provided KKT solver and an operator 
-        description of the linear mappings.   It also requires the 
-        arguments xnewcopy, xdot, xscal, xaxpy, ynewcopy, ydot, yscal, 
+        i.e., it requires a user-provided KKT solver and an operator
+        description of the linear mappings.   It also requires the
+        arguments xnewcopy, xdot, xscal, xaxpy, ynewcopy, ydot, yscal,
         yaxpy.  These arguments are functions defined as follows.
 
         If X is the vector space of primal variables x, then:
@@ -213,21 +213,21 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
         - xdot(u, v) returns the inner product of two vectors u and v in X.
         - xscal(alpha, u) computes u := alpha*u, where alpha is a scalar
           and u is a vector in X.
-        - xaxpy(u, v, alpha = 1.0) computes v := alpha*u + v for a scalar 
+        - xaxpy(u, v, alpha = 1.0) computes v := alpha*u + v for a scalar
           alpha and two vectors u and v in X.
         If this option is used, the argument q must be in the same format
-        as x, the argument P must be a Python function, the arguments A 
-        and G must be Python functions or None, and the argument 
+        as x, the argument P must be a Python function, the arguments A
+        and G must be Python functions or None, and the argument
         kktsolver is required.
         If Y is the vector space of primal variables y:
         - ynewcopy(u) creates a new copy of the vector u in Y.
         - ydot(u, v) returns the inner product of two vectors u and v in Y.
         - yscal(alpha, u) computes u := alpha*u, where alpha is a scalar
           and u is a vector in Y.
-        - yaxpy(u, v, alpha = 1.0) computes v := alpha*u + v for a scalar 
+        - yaxpy(u, v, alpha = 1.0) computes v := alpha*u + v for a scalar
           alpha and two vectors u and v in Y.
         If this option is used, the argument b must be in the same format
-        as y, the argument A must be a Python function or None, and the 
+        as y, the argument A must be a Python function or None, and the
         argument kktsolver is required.
     Control parameters.
        The following control parameters can be modified by adding an
@@ -244,7 +244,7 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
     import math
     from cvxopt import base, blas, misc
     from cvxopt.base import matrix, spmatrix
-
+    dims = None
     STEP = 0.99
     EXPON = 3
 
@@ -302,13 +302,13 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
             (not matrixA and A is not None)) and not customkkt:
         raise ValueError("use of function valued P, G, A requires a "
                          "user-provided kktsolver")
-    customx = (xnewcopy != None or xdot != None or xaxpy != None or
-               xscal != None)
+    customx = (xnewcopy is not None or xdot is not None or xaxpy is not None or
+               xscal is not None)
     if customx and (matrixP or matrixG or matrixA or not customkkt):
         raise ValueError("use of non-vector type for x requires "
                          "function valued P, G, A and user-provided kktsolver")
-    customy = (ynewcopy != None or ydot != None or yaxpy != None or
-               yscal != None)
+    customy = (ynewcopy is not None or ydot is not None or yaxpy is not None or
+               yscal is not None)
     if customy and (matrixA or not customkkt):
         raise ValueError("use of non vector type for y requires "
                          "function valued A and user-provided kktsolver")
@@ -415,7 +415,7 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
         if matrixA and b.size[0] != A.size[0]:
             raise TypeError("'b' must have length %d" % A.size[0])
     if b is None and customy:
-        raise ValueEror("use of non-vector type for y requires b")
+        raise ValueError("use of non-vector type for y requires b")
 
     ws3, wz3 = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
 
@@ -712,7 +712,7 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
                   % (iters, pcost, dcost, gap, pres, dres))
 
         if (pres <= FEASTOL and dres <= FEASTOL and (gap <= ABSTOL or
-                                                     (relgap is not None and relgap <= RELTOL) )) or \
+                                                     (relgap is not None and relgap <= RELTOL))) or \
                 iters == MAXITERS:
             ind = dims['l'] + sum(dims['q'])
             for m in dims['s']:
@@ -1041,286 +1041,6 @@ def coneqp(P, q, G=None, h=None, dims=None, A=None, b=None,
         misc.scale(z, W, inverse='I')
 
         gap = blas.dot(lmbda, lmbda)
-
-
-def qp(P, q, G=None, h=None, A=None, b=None, solver=None,
-       kktsolver=None, initvals=None, **kwargs):
-    """
-    Solves a quadratic program
-        minimize    (1/2)*x'*P*x + q'*x
-        subject to  G*x <= h
-                    A*x = b.
-    Input arguments.
-        P is a n x n dense or sparse 'd' matrix with the lower triangular 
-        part of P stored in the lower triangle.  Must be positive 
-        semidefinite.
-        q is an n x 1 dense 'd' matrix.
-        G is an m x n dense or sparse 'd' matrix.
-        h is an m x 1 dense 'd' matrix.
-        A is a p x n dense or sparse 'd' matrix.
-        b is a p x 1 dense 'd' matrix or None.
-        solver is None or 'mosek'.
-        The default values for G, h, A and b are empty matrices with 
-        zero rows.
-    Output arguments (default solver).
-        Returns a dictionary with keys 'status', 'x', 's', 'y', 'z',
-        'primal objective', 'dual objective', 'gap', 'relative gap',
-        'primal infeasibility, 'dual infeasibility', 'primal slack',
-        'dual slack'.
-
-        The 'status' field has values 'optimal' or 'unknown'.  
-        If the status is 'optimal', 'x', 's', 'y', 'z' are an approximate
-        solution of the primal and dual optimal solutions
-            G*x + s = h,  A*x = b
-            P*x + G'*z + A'*y + q = 0
-            s >= 0, z >= 0 
-            s'*z = o.
-
-        If the status is 'unknown', 'x', 's', 'y', 'z' are the last
-        iterates before termination.  These satisfy s > 0 and z > 0, but
-        are not necessarily feasible.
-        The values of the other fields are defined as follows.
-        - 'primal objective': the primal objective (1/2)*x'*P*x + q'*x.
-        - 'dual objective': the dual objective 
-              L(x,y,z) = (1/2)*x'*P*x + q'*x + z'*(G*x - h) + y'*(A*x-b).
-        - 'gap': the duality gap s'*z.  
-        - 'relative gap': the relative gap, defined as 
-              gap / -primal objective 
-          if the primal objective is negative, 
-              gap / dual objective
-          if the dual objective is positive, and None otherwise.
-        - 'primal infeasibility': the residual in the primal constraints,
-          defined as the maximum of the residual in the inequalities 
-              || G*x + s + h || / max(1, ||h||) 
-          and the residual in the equalities 
-              || A*x - b || / max(1, ||b||).
-        - 'dual infeasibility': the residual in the dual constraints,
-          defined as 
-              || P*x + G'*z + A'*y + q || / max(1, ||q||).
-        - 'primal slack': the smallest primal slack, min_k s_k.
-        - 'dual slack': the smallest dual slack, min_k z_k.
-        If the exit status is 'optimal', then the primal and dual
-        infeasibilities are guaranteed to be less than 
-        solvers.options['feastol'] (default 1e-7).  The gap is less than 
-        solvers.options['abstol'] (default 1e-7) or the relative gap is 
-        less than solvers.options['reltol'] (default 1e-6).
-
-        Termination with status 'unknown' indicates that the algorithm 
-        failed to find a solution that satisfies the specified tolerances.
-        In some cases, the returned solution may be fairly accurate.  If 
-        the primal and dual infeasibilities, the gap, and the relative gap
-        are small, then x, y, s, z are close to optimal.  
-    Output arguments (MOSEK solver).
-        The return dictionary has two additional fields 
-        'residual as primal infeasibility certificate' and 
-        'residual as dual infeasibility certificate', and 'status' field 
-        can also have the values 'primal infeasible' or 'dual infeasible'.
-        If the exit status is 'optimal', the different fields have the
-        same meaning as for the default solver, but the the magnitude of
-        the residuals and duality gap is controlled by the MOSEK exit 
-        criteria.  The 'residual as primal infeasibility certificate' and 
-        'residual as dual infeasibility certificate' are None.
-        Status 'primal infeasible'.  
-        - 'x', 's': None.
-        - 'y', 'z' are an approximate certificate of infeasibility  
-              G'*z + A'*y = 0,  h'*z + b'*y = -1,  z >= 0.
-        - 'primal objective': None.
-        - 'dual objective': 1.0.
-        - 'gap', 'relative gap': None.
-        - 'primal infeasibility' and 'dual infeasibility': None.
-        - 'primal slack': None.
-        - 'dual slack': the smallest dual slack min z_k.
-        - 'residual as primal infeasibility certificate': the residual in 
-          the condition of the infeasibility certificate, defined as 
-              || G'*z + A'*y || / max(1, ||c||).
-        - 'residual as dual infeasibility certificate': None.
-        Status 'dual infeasible'.  
-        - 'x', 's' are an approximate proof of dual infeasibility 
-              P*x = 0,  q'*x = -1,  G*x + s = 0,  A*x = 0,  s >= 0.
-        - 'y', 'z': None.
-        - 'primal objective': -1.0.
-        - 'dual objective': None.
-        - 'gap', 'relative gap': None.
-        - 'primal infeasibility' and 'dual infeasibility': None.
-        - 'primal slack': the smallest primal slack min_k s_k .
-        - 'dual slack': None.
-        - 'residual as primal infeasibility certificate': None. 
-        - 'residual as dual infeasibility certificate: the residual in 
-          the conditions of the infeasibility certificate, defined as 
-          the maximum of 
-              || P*x || / max(1, ||q||), 
-              || G*x + s || / max(1, ||h||),   
-              || A*x || / max(1, ||b||).
-        If status is 'unknown', all the other fields are None.
-    Control parameters.
-        The control parameters for the different solvers can be modified 
-        by adding an entry to the dictionary cvxopt.solvers.options.  The 
-        following parameters control the execution of the default solver.
-            options['show_progress'] True/False (default: True)
-            options['maxiters'] positive integer (default: 100)
-            options['refinement']  positive integer (default: 0)
-            options['abstol'] scalar (default: 1e-7)
-            options['reltol'] scalar (default: 1e-6)
-            options['feastol'] scalar (default: 1e-7).
-        The MOSEK parameters can me modified by adding an entry 
-        options['MOSEK'], containing a dictionary with MOSEK 
-        parameter/value pairs, as described in the MOSEK documentation.  
-        Options that are not recognized are replaced by their default 
-        values.
-    """
-
-    options = kwargs.get('options', globals()['options'])
-
-    from cvxopt import base, blas
-    from cvxopt.base import matrix, spmatrix
-
-    if solver == 'mosek':
-        from cvxopt import misc
-        try:
-            from cvxopt import msk
-            import mosek
-        except ImportError:
-            raise ValueError("invalid option "
-                             "(solver='mosek'): cvxopt.msk is not installed")
-
-        msk.options = options.get('mosek', {})
-        solsta, x, z, y = msk.qp(P, q, G, h, A, b)
-
-        n = q.size[0]
-        if G is None:
-            G = spmatrix([], [], [], (0, n), 'd')
-        if h is None:
-            h = matrix(0.0, (0, 1))
-        if A is None:
-            A = spmatrix([], [], [], (0, n), 'd')
-        if b is None:
-            b = matrix(0.0, (0, 1))
-        m = G.size[0]
-
-        resx0 = max(1.0, blas.nrm2(q))
-        resy0 = max(1.0, blas.nrm2(b))
-        resz0 = max(1.0, blas.nrm2(h))
-
-        if solsta in (mosek.solsta.optimal, mosek.solsta.near_optimal):
-            if solsta is mosek.solsta.optimal:
-                status = 'optimal'
-            else:
-                status = 'near optimal'
-
-            s = matrix(h)
-            base.gemv(G, x, s, alpha=-1.0, beta=1.0)
-
-            # rx = q + P*x + G'*z + A'*y
-            # pcost = 0.5 * x'*P*x + q'*x
-            rx = matrix(q)
-            base.symv(P, x, rx, beta=1.0)
-            pcost = 0.5 * (blas.dot(x, rx) + blas.dot(x, q))
-            base.gemv(A, y, rx, beta=1.0, trans='T')
-            base.gemv(G, z, rx, beta=1.0, trans='T')
-            resx = blas.nrm2(rx) / resx0
-
-            # ry = A*x - b
-            ry = matrix(b)
-            base.gemv(A, x, ry, alpha=1.0, beta=-1.0)
-            resy = blas.nrm2(ry) / resy0
-
-            # rz = G*x + s - h
-            rz = matrix(0.0, (m, 1))
-            base.gemv(G, x, rz)
-            blas.axpy(s, rz)
-            blas.axpy(h, rz, alpha=-1.0)
-            resz = blas.nrm2(rz) / resz0
-
-            gap = blas.dot(s, z)
-            dcost = pcost + blas.dot(y, ry) + blas.dot(z, rz) - gap
-            if pcost < 0.0:
-                relgap = gap / -pcost
-            elif dcost > 0.0:
-                relgap = gap / dcost
-            else:
-                relgap = None
-
-            dims = {'l': m, 's': [], 'q': []}
-            pslack = -misc.max_step(s, dims)
-            dslack = -misc.max_step(z, dims)
-
-            pres, dres = max(resy, resz), resx
-            pinfres, dinfres = None, None
-
-        elif solsta == mosek.solsta.prim_infeas_cer:
-            status = 'primal infeasible'
-
-            hz, by = blas.dot(h, z), blas.dot(b, y)
-            blas.scal(1.0 / (-hz - by), y)
-            blas.scal(1.0 / (-hz - by), z)
-
-            # rx = -A'*y - G'*z
-            rx = matrix(0.0, (q.size[0], 1))
-            base.gemv(A, y, rx, alpha=-1.0, trans='T')
-            base.gemv(G, z, rx, alpha=-1.0, beta=1.0, trans='T')
-            pinfres = blas.nrm2(rx) / resx0
-            dinfres = None
-
-            x, s = None, None
-            pres, dres = None, None
-            pcost, dcost = None, 1.0
-            gap, relgap = None, None
-
-            dims = {'l': m, 's': [], 'q': []}
-            dslack = -misc.max_step(z, dims)
-            pslack = None
-
-        elif solsta == mosek.solsta.dual_infeas_cer:
-            status = 'dual infeasible'
-            qx = blas.dot(q, x)
-            blas.scal(-1.0 / qx, x)
-            s = matrix(0.0, (m, 1))
-            base.gemv(G, x, s, alpha=-1.0)
-            z, y = None, None
-
-            # rz = P*x
-            rx = matrix(0.0, (q.size[0], 1))
-            base.symv(P, x, rx, beta=1.0)
-            resx = blas.nrm2(rx) / resx0
-
-            # ry = A*x
-            ry = matrix(0.0, (b.size[0], 1))
-            base.gemv(A, x, ry)
-            resy = blas.nrm2(ry) / resy0
-
-            # rz = s + G*x
-            rz = matrix(s)
-            base.gemv(G, x, rz, beta=1.0)
-            resz = blas.nrm2(rz) / resz0
-
-            pres, dres = None, None
-            dinfres, pinfres = max(resx, resy, resz), None
-            z, y = None, None
-            pcost, dcost = -1.0, None
-            gap, relgap = None, None
-
-            dims = {'l': m, 's': [], 'q': []}
-            pslack = -misc.max_step(s, dims)
-            dslack = None
-
-        else:
-            status = 'unknown'
-            x, s, y, z = None, None, None, None
-            pcost, dcost = None, None
-            gap, relgap = None, None
-            pres, dres = None, None
-            pslack, dslack = None, None
-            pinfres, dinfres = None, None
-
-        return {'status': status, 'x': x, 's': s, 'y': y, 'z': z,
-                'primal objective': pcost, 'dual objective': dcost,
-                'gap': gap, 'relative gap': relgap,
-                'primal infeasibility': pres, 'dual infeasibility': dres,
-                'primal slack': pslack, 'dual slack': dslack,
-                'residual as primal infeasibility certificate': pinfres,
-                'residual as dual infeasibility certificate': dinfres}
-
-    return coneqp(P, q, G, h, None, A, b, initvals, kktsolver=kktsolver, options=options)
 
 
 if __name__ == '__main__':
