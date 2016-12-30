@@ -6,6 +6,7 @@ Simple sample code to solve quadratic programming with cvxopt
 author Atsushi Sakai
 """
 import numpy as np
+import math
 
 STEP = 0.99
 EXPON = 3
@@ -16,7 +17,51 @@ FEASTOL = 1e-7
 show_progress = True
 
 
-def qp(P, q, G=None, h=None, A=None, b=None, **kwargs):
+def solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0):
+    # Solve
+    #
+    #     [ P  A' ] [ x ]   [ -q ]
+    #     [       ] [   ] = [    ].
+    #     [ A  0  ] [ y ]   [  b ]
+
+    try:
+        f3 = kktsolver({'d': matrix(0.0, (0, 1)), 'di':
+                        matrix(0.0, (0, 1)), 'beta': [], 'v': [], 'r': [], 'rti': []})
+    except ArithmeticError:
+        raise ValueError("Rank(A) < p or Rank([P; A; G]) < n")
+
+    x = -1.0 * matrix(q)
+    y = matrix(b)
+    f3(x, y, matrix(0.0, (0, 1)))
+    return {'status': 'optimal', 'x': x, 'y': y}
+
+    # dres = || P*x + q + A'*y || / resx0
+    #  rx = matrix(q)
+    #  fP(x, rx, beta=1.0)
+    #  pcost = 0.5 * (xdot(x, rx) + xdot(x, q))
+    #  fA(y, rx, beta=1.0, trans='T')
+    #  dres = math.sqrt(xdot(rx, rx)) / resx0
+
+    #  # pres = || A*x - b || / resy0
+    #  ry = ynewcopy(b)
+    #  fA(x, ry, alpha=1.0, beta=-1.0)
+    #  pres = math.sqrt(ydot(ry, ry)) / resy0
+
+    #  pcost = 0.0
+    #  pres = 0.0
+    #  dres = 0.0
+
+    #  return {'status': 'optimal', 'x': x, 'y': y, 'z':
+    #  matrix(0.0, (0, 1)), 's': matrix(0.0, (0, 1)),
+    #  'gap': 0.0, 'relgap': 0.0,
+    #  'primal objective': pcost,
+    #  'dual objective': pcost,
+    #  'primal slack': 0.0, 'dual slack': 0.0,
+    #  'primal infeasibility': pres, 'dual infeasibility': dres,
+    #  'iterations': 0}
+
+
+def qp(P, q, G=None, h=None, A=None, b=None):
     """
     Solves a pair of primal and dual convex quadratic cone programs
         minimize    (1/2)*x'*P*x + q'*x
@@ -219,7 +264,6 @@ def qp(P, q, G=None, h=None, A=None, b=None, **kwargs):
         as y, the argument A must be a Python function or None, and the
         argument kktsolver is required.
     """
-    import math
     from cvxopt import base, blas, misc
     from cvxopt.base import matrix, spmatrix
     dims = None
@@ -388,48 +432,7 @@ def qp(P, q, G=None, h=None, A=None, b=None, **kwargs):
     resz0 = max(1.0, misc.snrm2(h, dims))
 
     if cdim == 0:
-
-        # Solve
-        #
-        #     [ P  A' ] [ x ]   [ -q ]
-        #     [       ] [   ] = [    ].
-        #     [ A  0  ] [ y ]   [  b ]
-
-        try:
-            f3 = kktsolver({'d': matrix(0.0, (0, 1)), 'di':
-                            matrix(0.0, (0, 1)), 'beta': [], 'v': [], 'r': [], 'rti': []})
-        except ArithmeticError:
-            raise ValueError("Rank(A) < p or Rank([P; A; G]) < n")
-        x = matrix(q)
-        xscal(-1.0, x)
-        y = ynewcopy(b)
-        f3(x, y, matrix(0.0, (0, 1)))
-
-        # dres = || P*x + q + A'*y || / resx0
-        rx = matrix(q)
-        fP(x, rx, beta=1.0)
-        pcost = 0.5 * (xdot(x, rx) + xdot(x, q))
-        fA(y, rx, beta=1.0, trans='T')
-        dres = math.sqrt(xdot(rx, rx)) / resx0
-
-        # pres = || A*x - b || / resy0
-        ry = ynewcopy(b)
-        fA(x, ry, alpha=1.0, beta=-1.0)
-        pres = math.sqrt(ydot(ry, ry)) / resy0
-
-        if pcost == 0.0:
-            relgap = None
-        else:
-            relgap = 0.0
-
-        return {'status': 'optimal', 'x': x, 'y': y, 'z':
-                matrix(0.0, (0, 1)), 's': matrix(0.0, (0, 1)),
-                'gap': 0.0, 'relgap': 0.0,
-                'primal objective': pcost,
-                'dual objective': pcost,
-                'primal slack': 0.0, 'dual slack': 0.0,
-                'primal infeasibility': pres, 'dual infeasibility': dres,
-                'iterations': 0}
+        return solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0)
 
     x, y = matrix(q), ynewcopy(b)
     s, z = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
