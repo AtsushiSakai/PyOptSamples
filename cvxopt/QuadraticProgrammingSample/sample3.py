@@ -776,12 +776,12 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     x = matrix(np.copy(q))
     x *= -1.0
     y = matrix(np.copy(b))
-    blas.copy(h, z)
+    z = matrix(np.copy(h))
     try:
         f(x, y, z)
     except ArithmeticError:
         raise ValueError("Rank(A) < p or Rank([P; G; A]) < n")
-    blas.copy(z, s)
+    s = matrix(np.copy(z))
     blas.scal(-1.0, s)
 
     nrms = misc.snrm2(s, dims)
@@ -836,7 +836,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
         resy = math.sqrt(np.dot(ry.T, ry))
 
         # rz = s + G*x - h
-        blas.copy(s, rz)
+        rz = matrix(np.copy(s))
         blas.axpy(h, rz, alpha=-1.0)
         fG(x, rz, beta=1.0)
         resz = misc.snrm2(rz, dims)
@@ -959,7 +959,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
 
             # z := z - W'*s
             #    = bz - W'*(lambda o\ bs)
-            blas.copy(s, ws3)
+            ws3 = matrix(np.copy(s))
             misc.scale(ws3, W, trans='T')
             blas.axpy(ws3, z, alpha=-1.0)
 
@@ -985,14 +985,14 @@ def qp(P, q, G=None, h=None, A=None, b=None):
             if refinement:
                 wx = matrix(np.copy(x))
                 wy = matrix(np.copy(y))
-                blas.copy(z, wz)
-                blas.copy(s, ws)
+                wz = matrix(np.copy(z))
+                ws = matrix(np.copy(s))
             f4_no_ir(x, y, z, s)
             for i in range(refinement):
                 wx2 = matrix(np.copy(wx))
                 wy2 = matrix(np.copy(wy))
-                blas.copy(wz, wz2)
-                blas.copy(ws, ws2)
+                wz2 = matrix(np.copy(wz))
+                ws2 = matrix(np.copy(ws))
                 res(x, y, z, s, wx2, wy2, wz2, ws2, W, lmbda)
                 f4_no_ir(wx2, wy2, wz2, ws2)
                 y += wx2
@@ -1072,7 +1072,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
 
             # Save ds o dz for Mehrotra correction
             if i == 0:
-                blas.copy(ds, ws3)
+                ws3 = matrix(np.copy(ds))
                 misc.sprod(ws3, dz, dims)
 
             # Maximum steps to boundary.
