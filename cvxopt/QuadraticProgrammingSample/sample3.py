@@ -377,7 +377,7 @@ def scale(x, W, trans='N', inverse='N'):
         ind += n ** 2
 
 
-def solve_only_equalities_qp(kktsolver, fP, fA, ydot, resx0, resy0, dims):
+def solve_only_equalities_qp(kktsolver, fP, fA, resx0, resy0, dims):
     # Solve
     #
     #     [ P  A' ] [ x ]   [ -q ]
@@ -580,33 +580,12 @@ def qp(P, q, G=None, h=None, A=None, b=None):
             v := alpha * A' * u + beta * v if trans is 'T'.
         The arguments u and v are required.  The other arguments
         have default values alpha = 1.0, beta = 0.0, trans = 'N'.
-        3.  Instead of using the default representation of the primal
-        variable x and the dual variable y as one-column 'd' matrices,
-        we can represent these variables and the corresponding parameters
-        q and b by arbitrary Python objects (matrices, lists, dictionaries,
-        etc).  This can only be done in combination with 1. and 2. above,
-        i.e., it requires a user-provided KKT solver and an operator
-        description of the linear mappings.   It also requires the
-        arguments xnewcopy, xdot, xscal, xaxpy, ynewcopy, ydot, yscal,
-        yaxpy.  These arguments are functions defined as follows.
-
         If X is the vector space of primal variables x, then:
-        - xdot(u, v) returns the inner product of two vectors u and v in X.
-        - xscal(alpha, u) computes u := alpha*u, where alpha is a scalar
-          and u is a vector in X.
-        - xaxpy(u, v, alpha = 1.0) computes v := alpha*u + v for a scalar
-          alpha and two vectors u and v in X.
         If this option is used, the argument q must be in the same format
         as x, the argument P must be a Python function, the arguments A
         and G must be Python functions or None, and the argument
         kktsolver is required.
         If Y is the vector space of primal variables y:
-        - ynewcopy(u) creates a new copy of the vector u in Y.
-        - ydot(u, v) returns the inner product of two vectors u and v in Y.
-        - yscal(alpha, u) computes u := alpha*u, where alpha is a scalar
-          and u is a vector in Y.
-        - yaxpy(u, v, alpha = 1.0) computes v := alpha*u + v for a scalar
-          alpha and two vectors u and v in Y.
         If this option is used, the argument b must be in the same format
         as y, the argument A must be a Python function or None, and the
         argument kktsolver is required.
@@ -755,30 +734,22 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     def kktsolver(W):
         return factor(W, P)
 
-    xaxpy = blas.axpy
-    xscal = blas.scal
-
     def xcopy(x, y):
-        xscal(0.0, y)
-        xaxpy(x, y)
-
-    ynewcopy = matrix
-    ydot = blas.dot
-    yaxpy = blas.axpy
-    yscal = blas.scal
+        y *= 0.0
+        y += x
 
     def ycopy(x, y):
-        yscal(0.0, y)
-        yaxpy(x, y)
+        y *= 0.0
+        y += x
 
     resx0 = max(1.0, math.sqrt(np.dot(q.T, q)))
-    resy0 = max(1.0, math.sqrt(ydot(b, b)))
+    resy0 = max(1.0, math.sqrt(np.dot(b.T, b)))
     resz0 = max(1.0, misc.snrm2(h, dims))
 
     if cdim == 0:
-        return solve_only_equalities_qp(kktsolver, fP, fA, ydot, resx0, resy0, dims)
+        return solve_only_equalities_qp(kktsolver, fP, fA, resx0, resy0, dims)
 
-    x, y = matrix(q), ynewcopy(b)
+    x, y = matrix(q), matrix(b)
     s, z = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
 
     # Factor
@@ -812,7 +783,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     #     [ G   0  -I  ]   [ z ]   [  h ]
 
     xcopy(q, x)
-    xscal(-1.0, x)
+    x *= -1.0
     ycopy(b, y)
     blas.copy(h, z)
     try:
@@ -844,8 +815,8 @@ def qp(P, q, G=None, h=None, A=None, b=None):
             z[ind: ind + m * m: m + 1] += a
             ind += m ** 2
 
-    rx, ry, rz = matrix(q), ynewcopy(b), matrix(0.0, (cdim, 1))
-    dx, dy = matrix(x), ynewcopy(y)
+    rx, ry, rz = matrix(q), matrix(b), matrix(0.0, (cdim, 1))
+    dx, dy = matrix(x), matrix(y)
     dz, ds = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
     lmbda = matrix(0.0, (dims['l'] + sum(dims['q']) + sum(dims['s']), 1))
     lmbdasq = matrix(0.0, (dims['l'] + sum(dims['q']) + sum(dims['s']), 1))
@@ -871,7 +842,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
         # ry = A*x - b
         ycopy(b, ry)
         fA(x, ry, alpha=1.0, beta=-1.0)
-        resy = math.sqrt(ydot(ry, ry))
+        resy = math.sqrt(np.dot(ry.T, ry))
 
         # rz = s + G*x - h
         blas.copy(s, rz)
@@ -886,7 +857,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
         #       = (1/2)*x'*P*x + q'*x + y'*(A*x-b) + z'*(G*x-h+s) - z'*s
         #       = (1/2)*x'*P*x + q'*x + y'*ry + z'*rz - gap
         pcost = f0
-        dcost = f0 + ydot(y, ry) + misc.sdot(z, rz, dims) - gap
+        dcost = f0 + np.dot(y.T, ry) + misc.sdot(z, rz, dims) - gap
         if pcost < 0.0:
             relgap = gap / -pcost
         elif dcost > 0.0:
@@ -1013,10 +984,10 @@ def qp(P, q, G=None, h=None, A=None, b=None):
 
         if iters == 0:
             if refinement:
-                wx, wy = matrix(q), ynewcopy(b)
+                wx, wy = matrix(q), matrix(b)
                 wz, ws = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
             if refinement:
-                wx2, wy2 = matrix(q), ynewcopy(b)
+                wx2, wy2 = matrix(q), matrix(b)
                 wz2, ws2 = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
 
         def f4(x, y, z, s):
@@ -1033,8 +1004,8 @@ def qp(P, q, G=None, h=None, A=None, b=None):
                 blas.copy(ws, ws2)
                 res(x, y, z, s, wx2, wy2, wz2, ws2, W, lmbda)
                 f4_no_ir(wx2, wy2, wz2, ws2)
-                xaxpy(wx2, x)
-                yaxpy(wy2, y)
+                y += wx2
+                y += wy2
                 blas.axpy(wz2, z)
                 blas.axpy(ws2, s)
 
@@ -1075,10 +1046,11 @@ def qp(P, q, G=None, h=None, A=None, b=None):
                 ind2 += m
 
             # (dx, dy, dz) := -(1 - eta) * (rx, ry, rz)
-            xscal(0.0, dx)
-            xaxpy(rx, dx, alpha=-1.0 + eta)
-            yscal(0.0, dy)
-            yaxpy(ry, dy, alpha=-1.0 + eta)
+            dx *= 0.0
+            dx += (-1.0 + eta) * rx
+
+            dy *= 0.0
+            dy += (-1.0 + eta) * ry
             blas.scal(0.0, dz)
             blas.axpy(rz, dz, alpha=-1.0 + eta)
 
@@ -1139,8 +1111,8 @@ def qp(P, q, G=None, h=None, A=None, b=None):
                                      1.0 - step + dsdz / gap * step ** 2)) ** EXPON
                 eta = 0.0
 
-        xaxpy(dx, x, alpha=step)
-        yaxpy(dy, y, alpha=step)
+        x += step * dx
+        y += step * dy
 
         # We will now replace the 'l' and 'q' blocks of ds and dz with
         # the updated iterates in the current scaling.
