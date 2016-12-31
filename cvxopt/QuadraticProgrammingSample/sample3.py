@@ -593,7 +593,6 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     from cvxopt import base, blas, misc
     from cvxopt.base import matrix, spmatrix
     dims = None
-
     kktsolver = 'chol2'
 
     # Argument error checking depends on level of customization.
@@ -734,14 +733,6 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     def kktsolver(W):
         return factor(W, P)
 
-    def xcopy(x, y):
-        y *= 0.0
-        y += x
-
-    def ycopy(x, y):
-        y *= 0.0
-        y += x
-
     resx0 = max(1.0, math.sqrt(np.dot(q.T, q)))
     resy0 = max(1.0, math.sqrt(np.dot(b.T, b)))
     resz0 = max(1.0, misc.snrm2(h, dims))
@@ -782,9 +773,9 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     #     [ A   0   0  ] * [ y ] = [  b ].
     #     [ G   0  -I  ]   [ z ]   [  h ]
 
-    xcopy(q, x)
+    x = matrix(np.copy(q))
     x *= -1.0
-    ycopy(b, y)
+    y = matrix(np.copy(b))
     blas.copy(h, z)
     try:
         f(x, y, z)
@@ -832,7 +823,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     for iters in range(MAXITERS + 1):
 
         # f0 = (1/2)*x'*P*x + q'*x + r and  rx = P*x + q + A'*y + G'*z.
-        xcopy(q, rx)
+        rx = matrix(np.copy(q))
         fP(x, rx, beta=1.0)
         f0 = 0.5 * (np.dot(x.T, rx) + np.dot(x.T, q))
         fA(y, rx, beta=1.0, trans='T')
@@ -840,7 +831,7 @@ def qp(P, q, G=None, h=None, A=None, b=None):
         resx = math.sqrt(np.dot(rx.T, rx))
 
         # ry = A*x - b
-        ycopy(b, ry)
+        ry = matrix(np.copy(b))
         fA(x, ry, alpha=1.0, beta=-1.0)
         resy = math.sqrt(np.dot(ry.T, ry))
 
@@ -992,14 +983,14 @@ def qp(P, q, G=None, h=None, A=None, b=None):
 
         def f4(x, y, z, s):
             if refinement:
-                xcopy(x, wx)
-                ycopy(y, wy)
+                wx = matrix(np.copy(x))
+                wy = matrix(np.copy(y))
                 blas.copy(z, wz)
                 blas.copy(s, ws)
             f4_no_ir(x, y, z, s)
             for i in range(refinement):
-                xcopy(wx, wx2)
-                ycopy(wy, wy2)
+                wx2 = matrix(np.copy(wx))
+                wy2 = matrix(np.copy(wy))
                 blas.copy(wz, wz2)
                 blas.copy(ws, ws2)
                 res(x, y, z, s, wx2, wy2, wz2, ws2, W, lmbda)
