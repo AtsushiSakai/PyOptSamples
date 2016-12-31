@@ -377,7 +377,7 @@ def scale(x, W, trans='N', inverse='N'):
         ind += n ** 2
 
 
-def solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0, dims):
+def solve_only_equalities_qp(kktsolver, fP, fA, ydot, resx0, resy0, dims):
     # Solve
     #
     #     [ P  A' ] [ x ]   [ -q ]
@@ -393,6 +393,11 @@ def solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0, dims):
     try:
         f3 = kktsolver({'d': matrix(0.0, (0, 1)), 'di':
                         matrix(0.0, (0, 1)), 'beta': [], 'v': [], 'r': [], 'rti': []})
+
+        #  factor = kkt_chol2(G, dims, A)
+        #  W = {'d': matrix(0.0, (0, 1)), 'di': matrix(0.0, (0, 1)), 'beta': [], 'v': [], 'r': [], 'rti': []}
+        #  f3 = factor(W, P)
+
     except ArithmeticError:
         raise ValueError("Rank(A) < p or Rank([P; A; G]) < n")
 
@@ -611,7 +616,6 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     dims = None
 
     kktsolver = 'chol2'
-    defaultsolvers = ('ldl', 'ldl2', 'chol', 'chol2')
 
     # Argument error checking depends on level of customization.
     customkkt = not isinstance(kktsolver, str)
@@ -746,13 +750,11 @@ def qp(P, q, G=None, h=None, A=None, b=None):
     #     [ A   0   0         ] [ uy ] = [ by ].
     #     [ G   0   -W'       ] [ uz ]   [ bz ]
 
-    if kktsolver in defaultsolvers:
-        factor = kkt_chol2(G, dims, A)
+    factor = kkt_chol2(G, dims, A)
 
-        def kktsolver(W):
-            return factor(W, P)
+    def kktsolver(W):
+        return factor(W, P)
 
-    xdot = blas.dot
     xaxpy = blas.axpy
     xscal = blas.scal
 
@@ -769,12 +771,12 @@ def qp(P, q, G=None, h=None, A=None, b=None):
         yscal(0.0, y)
         yaxpy(x, y)
 
-    resx0 = max(1.0, math.sqrt(xdot(q, q)))
+    resx0 = max(1.0, math.sqrt(np.dot(q.T, q)))
     resy0 = max(1.0, math.sqrt(ydot(b, b)))
     resz0 = max(1.0, misc.snrm2(h, dims))
 
     if cdim == 0:
-        return solve_only_equalities_qp(kktsolver, fP, xdot, fA, ydot, resx0, resy0, dims)
+        return solve_only_equalities_qp(kktsolver, fP, fA, ydot, resx0, resy0, dims)
 
     x, y = matrix(q), ynewcopy(b)
     s, z = matrix(0.0, (cdim, 1)), matrix(0.0, (cdim, 1))
@@ -861,10 +863,10 @@ def qp(P, q, G=None, h=None, A=None, b=None):
         # f0 = (1/2)*x'*P*x + q'*x + r and  rx = P*x + q + A'*y + G'*z.
         xcopy(q, rx)
         fP(x, rx, beta=1.0)
-        f0 = 0.5 * (xdot(x, rx) + xdot(x, q))
+        f0 = 0.5 * (np.dot(x.T, rx) + np.dot(x.T, q))
         fA(y, rx, beta=1.0, trans='T')
         fG(z, rx, beta=1.0, trans='T')
-        resx = math.sqrt(xdot(rx, rx))
+        resx = math.sqrt(np.dot(rx.T, rx))
 
         # ry = A*x - b
         ycopy(b, ry)
