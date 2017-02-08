@@ -1,7 +1,7 @@
 #! /usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Interface function to solve a quadratic program with ECOS.
+Interface function to solve a quadratic programing problem with ECOS.
 
 Author: Atsushi Sakai
 
@@ -17,7 +17,7 @@ import scipy.sparse as sp
 
 def ecosqp(H, f, A=None, B=None, Aeq=None, Beq=None):
     """
-    solve quadratic program with ECOS
+    solve a quadratic programing problem with ECOS
 
         min 1/2*x'*H*x + f'*x
         s.t. A*x <= b
