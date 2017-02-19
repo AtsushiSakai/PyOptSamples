@@ -5,6 +5,11 @@ unittest code
 author Atsushi Sakai
 """
 import unittest
+
+import sys
+sys.path.append("./pyecosqp/")
+
+
 import pyecosqp.pyecosqp
 
 
