@@ -14,6 +14,9 @@ import ecos
 import scipy.linalg
 import scipy.sparse as sp
 
+VERBOSE = False
+#  VERBOSE = True
+
 
 def ecosqp(H, f, A=None, B=None, Aeq=None, Beq=None):
     """
@@ -45,6 +48,7 @@ def ecosqp(H, f, A=None, B=None, Aeq=None, Beq=None):
         W = np.linalg.cholesky(H).T
     except np.linalg.linalg.LinAlgError:
         W = scipy.linalg.sqrtm(H)
+    #  print(W)
 
     # set up SOCP problem
     c = np.vstack((np.zeros((n, 1)), 1.0))
@@ -70,7 +74,6 @@ def ecosqp(H, f, A=None, B=None, Aeq=None, Beq=None):
     Gquad2 = np.hstack((-W, zerocolumn))
     Gquad3 = np.hstack((-fhalf.T, np.matrix(tmp)))
     Gquad = np.vstack((Gquad1, Gquad2, Gquad3))
-    #  print(W)
     #  print(Gquad1)
     #  print(Gquad2)
     #  print(Gquad3)
@@ -89,26 +92,21 @@ def ecosqp(H, f, A=None, B=None, Aeq=None, Beq=None):
         h = np.vstack((B, hquad))
         dims = {'q': [W.shape[1] + 2], 'l': A.shape[0]}
 
-    #  np.set_printoptions(precision=3, suppress=True)
-    print(c)
-    print(G)
-    print(h)
-    print(dims)
     c = np.array(c).flatten()
     G = sp.csc_matrix(G)
     h = np.array(h).flatten()
 
     if Aeq.size == 0:
-        sol = ecos.solve(c, G, h, dims)
+        sol = ecos.solve(c, G, h, dims, verbose=VERBOSE)
     else:
         Aeq = sp.csc_matrix(Aeq)
         beq = np.array(beq).flatten()
-        sol = ecos.solve(c, G, h, dims, Aeq, beq)
+        sol = ecos.solve(c, G, h, dims, Aeq, beq, verbose=VERBOSE)
     #  print(sol)
     #  print(sol["x"])
 
     sol["fullx"] = sol["x"]
-    sol["x"] = np.matrix(sol["fullx"][:n]).T
+    sol["x"] = sol["fullx"][:n]
     sol["fval"] = sol["fullx"][-1]
 
     return sol
@@ -129,8 +127,8 @@ def test1():
     print(sol["x"])
     #  print(sol["primal objective"])
 
-    assert abs(sol["x"][0] - 0.0), "Error1"
-    assert abs(sol["x"][1] - 5.0), "Error2"
+    assert sol["x"][0] - 0.0, "Error1"
+    assert sol["x"][1] - 5.0, "Error2"
 
     P = np.diag([1.0, 0.0])
     q = np.matrix([3.0, 4.0]).T
@@ -140,7 +138,7 @@ def test1():
     sol2 = ecosqp(P, q, G, h)
 
     for i in range(len(sol["x"])):
-        assert abs(sol["x"][i] - sol2["x"][i]) <= 0.001, "Error1"
+        assert (sol["x"][i] - sol2["x"][i]) <= 0.001, "Error1"
 
 
 def test2():
@@ -196,7 +194,7 @@ def test2():
 
     for i in range(len(sol["x"])):
         print(sol["x"][i], sol2["x"][i])
-        assert abs(sol["x"][i] - sol2["x"][i]) <= 0.001, "Error1"
+        assert (sol["x"][i] - sol2["x"][i]) <= 0.001, "Error1"
 
 
 def test3():
@@ -269,7 +267,7 @@ def test3():
 
     for i in range(len(sol["x"])):
         print(sol["x"][i], sol2["x"][i])
-        assert abs(sol["x"][i] - sol2["x"][i]) <= 0.001, "Error1"
+        assert (sol["x"][i] - sol2["x"][i]) <= 0.001, "Error1"
 
 
 def test4():
@@ -353,6 +351,4 @@ def test5():
 if __name__ == '__main__':
     #  test1()
     #  test2()
-    #  test3()
-    #  test4()
-    test5()
+    test3()
