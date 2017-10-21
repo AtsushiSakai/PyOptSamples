@@ -19,6 +19,7 @@ def main():
     inf = 100000.0
     uij = [inf, inf, inf, inf, 1, inf, inf, inf]
     bi = [-5, 11, -1, -2, -3]
+    ni = [1, 1, 2, 3, 3, 4, 4, 5]
 
     print("ni", ni)
     print("nj", nj)
@@ -30,15 +31,16 @@ def main():
     objective = cvxpy.Minimize(cij.T * x)
     constraints = [0 <= x, x <= uij]
     for iin in range(1, len(bi) + 1):
-        inp = sum([x[i - 1] for i in range(1, len(ni)) if ni[i - 1] == iin])
+        inp = sum([x[i - 1] for i in range(1, len(nj)) if ni[i - 1] == iin])
         out = sum([x[i - 1] for i in range(1, len(ni)) if nj[i - 1] == iin])
+        print(iin, bi[iin - 1])
         constraints += [inp - out == bi[iin - 1]]
 
     prob = cvxpy.Problem(objective, constraints)
 
     result = prob.solve(solver=cvxpy.ECOS)
     print("Opt result:", result)
-    print("optimal parameter:\n", [int(i) for i in x.value])
+    print("optimal parameter:\n", [float(np.round(i)) for i in x.value])
     print("status:" + prob.status)
 
 
